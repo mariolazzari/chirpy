@@ -1,12 +1,3 @@
-# Learn HTTP Servers by [boot.dev](https://boot.dev)
-
-## http package
-
-[http](https://pkg.go.dev/net/http)
-
-### Server
-
-```go
 package main
 
 import "net/http"
@@ -20,6 +11,3 @@ func main() {
 	}
 	server.ListenAndServe()
 }
-```
-
-### File server
