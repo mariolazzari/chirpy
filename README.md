@@ -69,3 +69,11 @@ func main() {
 	server.ListenAndServe()
 }
 ```
+
+## Storage
+
+### Postgres
+
+```sh
+docker run --name postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=chirpy -p 5432:5432 -d postgres:18-alpine
+```
