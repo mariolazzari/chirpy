@@ -76,4 +76,29 @@ func main() {
 
 ```sh
 docker run --name postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=chirpy -p 5432:5432 -d postgres:18-alpine
+psql "postgres://postgres:@localhost:5432/chirpy"
 ```
+
+### Goose
+
+```sql
+-- +goose Up
+CREATE TABLE users (
+    id UUID PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    email TEXT NOT NULL UNIQUE
+);
+
+-- +goose Down
+DROP TABLE users;
+```
+
+```sh
+goose postgres "postgres//postgres:postgres@localhost:5432/chirpy?sslmode=disable" up
+goose postgres "postgres//postgres:postgres@localhost:5432/chirpy?sslmode=disable" down
+```
+
+### sqlc
+
+[docs](https://sqlc.dev/)
