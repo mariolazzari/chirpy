@@ -1,105 +1,58 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
+	"database/sql"
+	"log"
 	"net/http"
-	"regexp"
+	"os"
 	"sync/atomic"
-	"unicode/utf8"
+
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+	"github.com/mariolazzari/chirpy/internal/database"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
-}
-
-func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cfg.fileserverHits.Add(1)
-		next.ServeHTTP(w, r)
-	})
+	db             *database.Queries
 }
 
 func main() {
+	const filepathRoot = "."
+	const port = "8080"
 
-	apiCfg := apiConfig{}
+	godotenv.Load()
+	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		log.Fatal("DB_URL must be set")
+	}
+
+	dbConn, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("Error opening database: %s", err)
+	}
+	dbQueries := database.New(dbConn)
+
+	apiCfg := apiConfig{
+		fileserverHits: atomic.Int32{},
+		db:             dbQueries,
+	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(".")))))
-	mux.Handle("/assets/", http.StripPrefix("/assets", http.FileServer(http.Dir("./assets"))))
+	fsHandler := apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot))))
+	mux.Handle("/app/", fsHandler)
 
-	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
+	mux.HandleFunc("GET /api/healthz", handlerReadiness)
+	mux.HandleFunc("POST /api/validate_chirp", handlerChirpsValidate)
 
-	mux.HandleFunc("GET /admin/metrics", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `<html>
-  <body>
-    <h1>Welcome, Chirpy Admin</h1>
-    <p>Chirpy has been visited %d times!</p>
-  </body>
-</html>`, apiCfg.fileserverHits.Load())
-	})
+	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
+	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
 
-	mux.HandleFunc("POST /admin/reset", func(w http.ResponseWriter, r *http.Request) {
-		apiCfg.fileserverHits.Store(0)
-
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Hits: %d", apiCfg.fileserverHits.Load())
-	})
-
-	mux.HandleFunc("POST /api/validate_chirp", func(w http.ResponseWriter, r *http.Request) {
-		type Body struct {
-			Body string `json:"body"`
-		}
-
-		type BodyError struct {
-			Message string `json:"message"`
-		}
-
-		type Response struct {
-			CleanedBody string `json:"cleaned_body"`
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-
-		var body Body
-		err := json.NewDecoder(r.Body).Decode(&body)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(BodyError{
-				Message: "Something went wrong",
-			})
-			return
-		}
-
-		// validation
-		msgLen := utf8.RuneCountInString(body.Body)
-		if msgLen < 1 || msgLen > 140 {
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(BodyError{
-				Message: "Chirp is too long",
-			})
-			return
-		}
-
-		// cleaned
-		re := regexp.MustCompile(`(?i)\b(kerfuffle|sharbert|fornax)\b`)
-		cleaned := re.ReplaceAllString(body.Body, "****")
-
-		json.NewEncoder(w).Encode(Response{
-			CleanedBody: cleaned,
-		})
-	})
-
-	server := http.Server{
-		Addr:    ":8080",
+	srv := &http.Server{
+		Addr:    ":" + port,
 		Handler: mux,
 	}
-	server.ListenAndServe()
+
+	log.Printf("Serving on port: %s\n", port)
+	log.Fatal(srv.ListenAndServe())
 }

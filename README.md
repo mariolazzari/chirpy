@@ -102,3 +102,14 @@ goose postgres "postgres//postgres:postgres@localhost:5432/chirpy?sslmode=disabl
 ### sqlc
 
 [docs](https://sqlc.dev/)
+
+```yaml
+version: "2"
+sql:
+  - schema: "sql/schema"
+    queries: "sql/queries"
+    engine: "postgresql"
+    gen:
+      go:
+        out: "internal/database"
+```
