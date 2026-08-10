@@ -95,8 +95,8 @@ DROP TABLE users;
 ```
 
 ```sh
-goose postgres "postgres//postgres:postgres@localhost:5432/chirpy?sslmode=disable" up
-goose postgres "postgres//postgres:postgres@localhost:5432/chirpy?sslmode=disable" down
+goose postgres "postgres://postgres:postgres@localhost:5432/chirpy?sslmode=disable" up
+goose postgres "postgres://postgres:postgres@localhost:5432/chirpy?sslmode=disable" down
 ```
 
 ### sqlc
