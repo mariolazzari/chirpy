@@ -1,7 +1,9 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -83,6 +85,44 @@ func (cfg *apiConfig) handlerReadChirps(w http.ResponseWriter, r *http.Request) 
 	}
 
 	respondWithJSON(w, http.StatusOK, chirps)
+}
+
+func (cfg *apiConfig) handlerReadChirp(w http.ResponseWriter, r *http.Request) {
+	// parse chirp id
+	chirpId := r.PathValue("id")
+	if chirpId == "" {
+		respondWithError(w, http.StatusBadRequest, "Chirp ID cannot be null", nil)
+		return
+	}
+
+	// uuid
+	chirpUuid, err := uuid.Parse(chirpId)
+	if chirpId == "" {
+		respondWithError(w, http.StatusBadRequest, "Invalid chirp ID", err)
+		return
+	}
+
+	// Read chirp
+	row, err := cfg.db.ReadChirp(r.Context(), chirpUuid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondWithError(w, http.StatusNotFound, "Chirp not found", nil)
+			return
+		}
+
+		respondWithError(w, http.StatusInternalServerError, "Error searching chirp", err)
+		return
+	}
+
+	chirp := Chirp{
+		ID:        row.ID,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+		Body:      row.Body,
+		UserID:    row.UserID,
+	}
+
+	respondWithJSON(w, http.StatusOK, chirp)
 }
 
 func handlerChirpsValidate(w http.ResponseWriter, r *http.Request) {
