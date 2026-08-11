@@ -63,6 +63,28 @@ func (cfg *apiConfig) handlerCreateChrp(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func (cfg *apiConfig) handlerReadChirps(w http.ResponseWriter, r *http.Request) {
+	rows, err := cfg.db.ReadChirps(r.Context())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't read chirps", err)
+		return
+	}
+
+	// create collection
+	chirps := make([]Chirp, 0, len(rows))
+	for _, row := range rows {
+		chirps = append(chirps, Chirp{
+			ID:        row.ID,
+			CreatedAt: row.CreatedAt,
+			UpdatedAt: row.UpdatedAt,
+			Body:      row.Body,
+			UserID:    row.UserID,
+		})
+	}
+
+	respondWithJSON(w, http.StatusOK, chirps)
+}
+
 func handlerChirpsValidate(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
 		Body string `json:"body"`
