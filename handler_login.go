@@ -5,13 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/mariolazzari/chirpy/internal/auth"
 )
 
 type loginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email     string `json:"email"`
+	Password  string `json:"password"`
+	ExpiresIn int    `json:"expires_in_seconds"`
+}
+
+type loginResponse struct {
+	User
+	Token string `json:"token"`
 }
 
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
@@ -21,6 +28,7 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// search user by email
 	user, err := cfg.db.LoginUser(r.Context(), body.Email)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -32,21 +40,36 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// verify password
 	isValid, err := auth.CheckPasswordHash(body.Password, user.HashedPassword)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "could not verify password", err)
 		return
 	}
-
 	if !isValid {
 		respondWithError(w, http.StatusUnauthorized, "invalid credentials", nil)
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, User{
-		ID:        user.ID,
-		Email:     user.Email,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
+	// token creation
+	expiresIn := 3600
+	if body.ExpiresIn > 0 {
+		expiresIn = min(body.ExpiresIn, 3600)
+	}
+
+	jwt, err := auth.MakeJWT(user.ID, cfg.secret, time.Duration(expiresIn)*time.Second)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "could not create token", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, loginResponse{
+		User: User{
+			ID:        user.ID,
+			Email:     user.Email,
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: user.UpdatedAt,
+		},
+		Token: jwt,
 	})
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mariolazzari/chirpy/internal/auth"
 	"github.com/mariolazzari/chirpy/internal/database"
 )
 
@@ -21,14 +22,26 @@ type Chirp struct {
 }
 
 func (cfg *apiConfig) handlerCreateChrp(w http.ResponseWriter, r *http.Request) {
+	// check token
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "missing token", err)
+		return
+	}
+
+	// validate token
+	userId, err := auth.ValidateJWT(token, cfg.secret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "invalid token", err)
+		return
+	}
+
 	type parameters struct {
-		Body   string    `json:"body"`
-		UserID uuid.UUID `json:"user_id"`
+		Body string `json:"body"`
 	}
 
 	params := parameters{}
-	err := json.NewDecoder(r.Body).Decode(&params)
-	if err != nil {
+	if err = json.NewDecoder(r.Body).Decode(&params); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
 		return
 	}
@@ -49,7 +62,7 @@ func (cfg *apiConfig) handlerCreateChrp(w http.ResponseWriter, r *http.Request) 
 
 	chirp, err := cfg.db.CreateChirp(r.Context(), database.CreateChirpParams{
 		Body:   cleaned,
-		UserID: params.UserID,
+		UserID: userId,
 	})
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't create chirp", err)
@@ -61,7 +74,7 @@ func (cfg *apiConfig) handlerCreateChrp(w http.ResponseWriter, r *http.Request) 
 		CreatedAt: chirp.CreatedAt,
 		UpdatedAt: chirp.UpdatedAt,
 		Body:      chirp.Body,
-		UserID:    chirp.UserID,
+		UserID:    userId,
 	})
 }
 
@@ -124,40 +137,6 @@ func (cfg *apiConfig) handlerReadChirp(w http.ResponseWriter, r *http.Request) {
 
 	respondWithJSON(w, http.StatusOK, chirp)
 }
-
-// func handlerChirpsValidate(w http.ResponseWriter, r *http.Request) {
-// 	type parameters struct {
-// 		Body string `json:"body"`
-// 	}
-// 	type returnVals struct {
-// 		CleanedBody string `json:"cleaned_body"`
-// 	}
-
-// 	decoder := json.NewDecoder(r.Body)
-// 	params := parameters{}
-// 	err := decoder.Decode(&params)
-// 	if err != nil {
-// 		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
-// 		return
-// 	}
-
-// 	const maxChirpLength = 140
-// 	if len(params.Body) > maxChirpLength {
-// 		respondWithError(w, http.StatusBadRequest, "Chirp is too long", nil)
-// 		return
-// 	}
-
-// 	badWords := map[string]struct{}{
-// 		"kerfuffle": {},
-// 		"sharbert":  {},
-// 		"fornax":    {},
-// 	}
-// 	cleaned := getCleanedBody(params.Body, badWords)
-
-// 	respondWithJSON(w, http.StatusOK, returnVals{
-// 		CleanedBody: cleaned,
-// 	})
-// }
 
 func getCleanedBody(body string, badWords map[string]struct{}) string {
 	words := strings.Split(body, " ")
