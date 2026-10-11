@@ -102,7 +102,7 @@ func (cfg *apiConfig) handlerChirpsRetrieve(w http.ResponseWriter, r *http.Reque
 
 func (cfg *apiConfig) handlerChirpsGet(w http.ResponseWriter, r *http.Request) {
 	// parse chirp id
-	chirpId := r.PathValue("id")
+	chirpId := r.PathValue("chirpID")
 	if chirpId == "" {
 		respondWithError(w, http.StatusBadRequest, "Chirp ID cannot be null", nil)
 		return
@@ -136,6 +136,63 @@ func (cfg *apiConfig) handlerChirpsGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, chirp)
+}
+
+func (cfg *apiConfig) handlerChirpsDelete(w http.ResponseWriter, r *http.Request) {
+	// check token
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "missing token", err)
+		return
+	}
+
+	// validate token
+	userId, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "invalid token", err)
+		return
+	}
+
+	// parse chirp id
+	chirpId := r.PathValue("chirpID")
+	if chirpId == "" {
+		respondWithError(w, http.StatusBadRequest, "Chirp ID cannot be null", nil)
+		return
+	}
+
+	// uuid
+	chirpUuid, err := uuid.Parse(chirpId)
+	if chirpId == "" {
+		respondWithError(w, http.StatusBadRequest, "Invalid chirp ID", err)
+		return
+	}
+
+	// Read chirp
+	row, err := cfg.db.ReadChirp(r.Context(), chirpUuid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			respondWithError(w, http.StatusNotFound, "Chirp not found", nil)
+			return
+		}
+
+		respondWithError(w, http.StatusInternalServerError, "Error searching chirp", err)
+		return
+	}
+
+	// check chirp ownership
+	if row.UserID != userId {
+		respondWithError(w, http.StatusForbidden, "Error chirp ownership", err)
+		return
+
+	}
+
+	err = cfg.db.DeleteChirp(r.Context(), row.ID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error deleting chirp", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusNoContent, nil)
 }
 
 func getCleanedBody(body string, badWords map[string]struct{}) string {
