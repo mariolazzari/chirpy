@@ -1,75 +1,75 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"time"
 
 	"github.com/mariolazzari/chirpy/internal/auth"
+	"github.com/mariolazzari/chirpy/internal/database"
 )
 
-type loginRequest struct {
-	Email     string `json:"email"`
-	Password  string `json:"password"`
-	ExpiresIn int    `json:"expires_in_seconds"`
-}
-
-type loginResponse struct {
-	User
-	Token string `json:"token"`
-}
-
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
-	var body loginRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		respondWithError(w, http.StatusBadRequest, "invalid login body", err)
-		return
+	type parameters struct {
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+	type response struct {
+		User
+		Token        string `json:"token"`
+		RefreshToken string `json:"refresh_token"`
 	}
 
-	// search user by email
-	user, err := cfg.db.LoginUser(r.Context(), body.Email)
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			respondWithError(w, http.StatusUnauthorized, "invalid credentials", nil)
-			return
-		}
-
-		respondWithError(w, http.StatusInternalServerError, "could not retrieve user", err)
+		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
 		return
 	}
 
-	// verify password
-	isValid, err := auth.CheckPasswordHash(body.Password, user.HashedPassword)
+	user, err := cfg.db.GetUserByEmail(r.Context(), params.Email)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "could not verify password", err)
-		return
-	}
-	if !isValid {
-		respondWithError(w, http.StatusUnauthorized, "invalid credentials", nil)
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password", err)
 		return
 	}
 
-	// token creation
-	expiresIn := 3600
-	if body.ExpiresIn > 0 {
-		expiresIn = min(body.ExpiresIn, 3600)
+	match, err := auth.CheckPasswordHash(params.Password, user.HashedPassword)
+	if err != nil || !match {
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password", err)
+		return
 	}
 
-	jwt, err := auth.MakeJWT(user.ID, cfg.secret, time.Duration(expiresIn)*time.Second)
+	accessToken, err := auth.MakeJWT(
+		user.ID,
+		cfg.jwtSecret,
+		time.Hour,
+	)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "could not create token", err)
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create access JWT", err)
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, loginResponse{
+	refreshToken := auth.MakeRefreshToken()
+
+	_, err = cfg.db.CreateRefreshToken(r.Context(), database.CreateRefreshTokenParams{
+		UserID:    user.ID,
+		Token:     refreshToken,
+		ExpiresAt: time.Now().UTC().Add(time.Hour * 24 * 60),
+	})
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't save refresh token", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, response{
 		User: User{
 			ID:        user.ID,
-			Email:     user.Email,
 			CreatedAt: user.CreatedAt,
 			UpdatedAt: user.UpdatedAt,
+			Email:     user.Email,
 		},
-		Token: jwt,
+		Token:        accessToken,
+		RefreshToken: refreshToken,
 	})
 }

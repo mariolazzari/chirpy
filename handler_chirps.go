@@ -21,7 +21,7 @@ type Chirp struct {
 	UserID    uuid.UUID `json:"user_id"`
 }
 
-func (cfg *apiConfig) handlerCreateChrp(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) handlerChirpsCreate(w http.ResponseWriter, r *http.Request) {
 	// check token
 	token, err := auth.GetBearerToken(r.Header)
 	if err != nil {
@@ -30,7 +30,7 @@ func (cfg *apiConfig) handlerCreateChrp(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// validate token
-	userId, err := auth.ValidateJWT(token, cfg.secret)
+	userId, err := auth.ValidateJWT(token, cfg.jwtSecret)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "invalid token", err)
 		return
@@ -78,7 +78,7 @@ func (cfg *apiConfig) handlerCreateChrp(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-func (cfg *apiConfig) handlerReadChirps(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) handlerChirpsRetrieve(w http.ResponseWriter, r *http.Request) {
 	rows, err := cfg.db.ReadChirps(r.Context())
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't read chirps", err)
@@ -100,7 +100,7 @@ func (cfg *apiConfig) handlerReadChirps(w http.ResponseWriter, r *http.Request) 
 	respondWithJSON(w, http.StatusOK, chirps)
 }
 
-func (cfg *apiConfig) handlerReadChirp(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) handlerChirpsGet(w http.ResponseWriter, r *http.Request) {
 	// parse chirp id
 	chirpId := r.PathValue("id")
 	if chirpId == "" {
