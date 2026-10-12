@@ -79,16 +79,49 @@ func (cfg *apiConfig) handlerChirpsCreate(w http.ResponseWriter, r *http.Request
 }
 
 func (cfg *apiConfig) handlerChirpsRetrieve(w http.ResponseWriter, r *http.Request) {
-	rows, err := cfg.db.ReadChirps(r.Context())
+	var rows []database.Chirp
+	var err error
+
+	authorID := r.URL.Query().Get("author_id")
+	sortOrder := r.URL.Query().Get("sort")
+
+	if sortOrder == "" {
+		sortOrder = "asc"
+	}
+
+	if sortOrder != "asc" && sortOrder != "desc" {
+		respondWithError(w, http.StatusBadRequest, "invalid sort order", nil)
+		return
+	}
+
+	if authorID == "" {
+		if sortOrder == "desc" {
+			rows, err = cfg.db.ReadChirpsDesc(r.Context())
+		} else {
+			rows, err = cfg.db.ReadChirpsAsc(r.Context())
+		}
+	} else {
+		userID, parseErr := uuid.Parse(authorID)
+		if parseErr != nil {
+			respondWithError(w, http.StatusBadRequest, "invalid user uuid", parseErr)
+			return
+		}
+
+		if sortOrder == "desc" {
+			rows, err = cfg.db.ReadUserChirpsDesc(r.Context(), userID)
+		} else {
+			rows, err = cfg.db.ReadUserChirpsAsc(r.Context(), userID)
+		}
+	}
+
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't read chirps", err)
 		return
 	}
 
-	// create collection
-	chirps := make([]Chirp, 0, len(rows))
+	chirps := make([]*Chirp, 0, len(rows))
 	for _, row := range rows {
-		chirps = append(chirps, Chirp{
+		chirps = append(chirps, &Chirp{
 			ID:        row.ID,
 			CreatedAt: row.CreatedAt,
 			UpdatedAt: row.UpdatedAt,
